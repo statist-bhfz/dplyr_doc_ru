@@ -1,0 +1,299 @@
+---
+title: "Hybrid evaluation"
+output: html_document
+date: '2015-06-15'
+---
+
+### Перевод
+### https://cran.r-project.org/web/packages/dplyr/vignettes/hybrid-evaluation.html
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+setwd("D:/GITHUB/dplyr_doc_ru")
+library(dplyr)
+```
+
+Рассмотрим этот вызов `summarise`:
+
+```{r, eval=FALSE}
+summarise(per_day, flights = sum(flights))
+```
+
+Один из способов, которым dplyr достигает значительного ускорения, состоит в том, что выражения могут вычисляться не R, а альтернативным кодом, который работает быстрее и использует меньше памяти.
+
+В принципе, вызов функции `summarise`, представленный выше, вычисляет выражение `sum(flights)` на каждом поднаборе `flights` в соответствии с группировкой `per_day`. Это включает в себя создание нового вектора в R для хранения блока и вычисление выражения R.
+
+Вычисление выражения R может повлечь расходы, которых можно избежать, т.е. S3 диспетчеризацию...
+
+dplyr распознаёт выражение `sum(flights)` как функцию `sum`, применяемую к известному столбцу данных, что делает возможным выполнить обработку диспетчеризации заранее и один раз, избегая ненужного выделения памяти и вычисляя результат быстрее.
+
+Гибридное вычисление способно работать на подвыражениях. Рассмотрим:
+
+```{r, eval=FALSE}
+foo <- function(x) x*x 
+summarise(per_day, flights = foo(sum(flights)) )
+```
+
+dplyr заменяет подвыражения, которые он умеет обрабатывать, и остваляет остальное для стандартного вычисления в R. Вместо вычисления `foo(sum(flights))` R будет вычислять только `foo(z)`, где `z` является результатов внутреннего вычисления `sum(flights)`.
+
+# Реализация
+
+Гибридное вычисление призвано быть расширяемым. Прежде чем мы приступим к регистрации пользовательских обработчиков гибридных вычислений, нам нужно понять систему.
+
+Первый строительный блок, который нам необходимо охватить, это класс `Result`.
+
+```{r, eval=FALSE}
+namespace dplyr {
+    class Result {
+    public:
+        Result(){}
+        virtual ~Result(){} ;
+        
+        virtual SEXP process( const GroupedDataFrame& gdf) = 0 ;
+        
+        virtual SEXP process( const FullDataFrame& df ) = 0 ;
+        
+        virtual SEXP process( const SlicingIndex& index ){
+            return R_NilValue ;    
+        }
+        
+    } ;
+}
+```
+
+Первые два метода работают со сгруппированными и несгруппированными таблицами данных. Мы в основном сосредоточимся на последнем методе, работающем с `SlicingIndex`.
+
+`SlicingIndex` - это класс, инкапсулирующий индексы отдельного блока сгруппированной таблицы данных.
+
+Гибридное вычисление в действительности наследуется от класса `Result`. Давайте рассмотрим более простую версию `sum`, которая обрабатывает только числовые векторы. (Внутренняя версия является более полной, обрабатывает пропущенные значения, ...).
+
+```{r, eval=FALSE}
+class Sum : public Result {
+  public:
+    Sum( NumericVector data_ ): data(data_){}
+    
+    SEXP process( const SlicingIndex& index ){
+      double res = 0.0 ;
+      for( int i=0; i<index.size(); i++) res += data[ index[i] ] ;
+      return NumericVector::create( res );
+    }
+    
+    virtual SEXP process( const GroupedDataFrame& gdf){
+      ...
+    }
+    virtual SEXP process( const FullDataFrame& df ){
+      ...
+    }
+        
+  private:
+    NumericVector data ;
+} ;
+```
+
+## Использования Processor
+
+Реализация классов, наследуемых от класса `Result`, может быть упрощена с помощью шаблона класса `Processor`. `Processor` является шаблоном с двумя параметрами: типом результатов R (`REALSXP`, `STRSXP`, …) и классом, который вы опеределяете. (Используется паттерн CRTP).
+
+При использовании `Processor` мы лишь должны обеспечить метод `process_chunk`, который принимает `const SlicingIndex&` и возвращает объект, подходящий для превращения в вектор, тип которого задается первым параметром шаблона.
+
+Цель шаблона `Processor` состоит в генерировании повторно используемого кода для трех методов `process`, определенных в интерфейсе `Result`.
+
+Возможная реализация `Sum` может выглядеть примерно так:
+
+```{r, eval=FALSE}
+lass Sum : public Processor<REALSXP, Sum> {
+  public:
+    Sum( NumericVector data_ ): data(data_){}
+    
+    double process_chunk( const SlicingIndex& index ){
+      double res = 0.0 ;
+      for( int i=0; i<index.size(); i++) res += data[ index[i] ] ;
+      return res;
+    }
+    
+  private:
+    NumericVector data ;
+}
+```
+
+Учитывая данную типичность, мы можем захотеть создать шаблон класса `Sum`, чтобы обрабатывать не только числовые векторы:
+
+```{r, eval=FALSE}
+template <int RTYPE>
+class Sum : public Processor<REALSXP, Sum<RTYPE> > {
+  public:
+    typedef typename Rcpp::traits::storage_type<RTYPE>::type STORAGE ;
+    
+    Sum( Vector<RTYPE> data_ ): data(data_){}
+    
+    STORAGE process_chunk( const SlicingIndex& index ){
+      STORAGE res = 0.0 ;
+      for( int i=0; i<index.size(); i++) res += data[ index[i] ] ;
+      return res;
+    }
+    
+  private:
+    Vector<RTYPE> data ;
+}
+```
+
+Кроме отсутствия обработки пропущенных значений и использования внутреннего знания класса `SlicingIndex`, эта реализация `Sum` близка к внутренней реализации в dplyr.
+
+## Получение гибридных обработчиков
+
+Функции dplyr используют функцию `get_handler` для получения обработчиков конкретных выражений.
+
+```{r, eval=FALSE}
+Result* get_handler( SEXP call, const LazySubsets& subsets ){
+    int depth = Rf_length(call) ;
+    HybridHandlerMap& handlers = get_handlers() ;
+    SEXP fun_symbol = CAR(call) ;
+    if( TYPEOF(fun_symbol) != SYMSXP ) return 0 ;
+    
+    HybridHandlerMap::const_iterator it = handlers.find( fun_symbol ) ;
+    if( it == handlers.end() ) return 0 ;
+    
+    return it->second( call, subsets, depth - 1 );
+}
+```
+
+`get_handler` выполняет поиск типа `HybridHandlerMap` в хеш-таблице.
+
+```{r, eval=FALSE}
+typedef dplyr::Result* (*HybridHandler)(SEXP, const dplyr::LazySubsets&, int) ;
+typedef dplyr_hash_map<SEXP,HybridHandler> HybridHandlerMap ;
+```
+
+`HybridHandlerMap` является просто хеш-картой, где символ функции и тип значения карты является указателем функции, определяемым `HybridHandler`.
+
+Параметры указателя фунции `HybridHandler`: вызов, который мы хотим гибридизировать, т.е. что-то типа `sum(flights)`; ссылка `LazySubsets` (единственное, что имеет отношение к этому классу, это то, что он определяет метод `get_variable`, который принимает символ `Sexp` и возвращает соответствующую переменную из таблицы данных); количество аргументов в вызове. Например, для For `sum(flights)` количество аргументов равно `1`.
+
+Цель функции гибридного обработчика  является возвращение `Result*`, если он может обрабатывать вызов, или 0, если не может.
+
+С нашим предыдущим шаблоном класса `Sum` мы можем оределить функцию гибридного обработчика так:
+
+```{r, eval=FALSE}
+Result* sum_handler(SEXP call, const LazySubsets& subsets, int nargs ){
+  // we only know how to deal with argument
+  if( nargs != 1 ) return 0 ;
+  
+  // get the first argument
+  SEXP arg = CADR(call) ;
+  
+  // if this is a symbol, extract the variable from the subsets
+  if( TYPEOF(arg) == SYMSXP ) arg = subsets.get_variable(arg) ;
+  
+  // we know how to handle integer vectors and numeric vectors
+  switch( TYPEOF(arg) ){
+  case INTSXP: return new Sum<INTSXP>(arg) ;
+  case REALSXP: return new Sum<REALSXP>(arg) ;
+  default: break ;
+  }
+  
+  // we are here if we could not handle the call
+  return 0 ;
+}
+```
+
+## Регистрация гибридных обработчиков
+
+dplyr позволяет пользователям, преимущественно для пакетов, регистрировать свои собственные гибридные обработчики посредством `registerHybridHandler`.
+
+```{r, eval=FALSE}
+void registerHybridHandler( const char* , HybridHandler ) ;
+```
+
+Для регистрации обработчика, созданного выше, мы затем просто делаем следующее:
+
+```{r, eval=FALSE}
+registerHybridHandler( "sum", sum_handler )  ;
+```
+
+## Объединение всех компонентов
+
+Мы собираемся зарегистрировать обработчик под названием `hitchhiker`, который всегда возвращает ответ на всё, то есть `42` (отсылка к роману "Автостопом по галактике - прим. пер.).
+
+Код ниже подходит для запуска через `sourceCpp`.
+
+```{r, eval=FALSE}
+#include <dplyr.h>
+// [[Rcpp::depends(dplyr,BH)]]
+
+using namespace dplyr ;
+using namespace Rcpp ;
+
+// the class that derives from Result through Processor
+class Hitchhiker : public Processor<INTSXP,Hitchhiker>{
+public:
+    
+    // always returns 42, as it is the answer to everything
+    int process_chunk( const SlicingIndex& ){
+        return 42 ;    
+    }
+} ;
+
+// we actually don`t need the arguments
+// we can just let this handler return a new Hitchhiker pointer
+Result* hitchhiker_handler( SEXP, const LazySubsets&, int ){
+    return new Hitchhiker ;        
+}
+
+// registration of the register, called from R, so exprted through Rcpp::export
+// [[Rcpp::export]]
+void registerHitchhiker(){
+    registerHybridHandler( "hitchhiker", hitchhiker_handler );    
+}
+
+/*** R
+    require(dplyr)
+    registerHitchhiker()
+    
+    n  <- 10000
+    df <- group_by( tbl_df( data.frame( 
+        id = sample( letters[1:4], 1000, replace = TRUE ), 
+        x  = rnorm(n)
+        ) ), id )
+    summarise( df, y = hitchhiker() )
+    # Source: local data frame [4 x 2]
+    # Groups:
+    # 
+    #   id  y
+    # 1  a 42
+    # 2  b 42
+    # 3  c 42
+    # 4  d 42
+    
+    summarise(df, y = mean(x) + hitchhiker())
+    # Source: local data frame [4 x 2]
+    # Groups:
+    # 
+    #   id        y
+    # 1  a 42.00988
+    # 2  b 42.00988
+    # 3  c 42.01440
+    # 4  d 41.99160
+*/
+```
+
+## Регистрация гибридных обработчиков с пакетом
+
+Лучшим местом для регистрации пользовательских обработчиков в пакете является начальная точка `init`, которую R автоматически вызывает при загрузке пакета.
+
+Вместо использования функции `registerHitchhiker`, как показано выше, пакеты обычно регистрируют обработчики подобно этому:
+
+```{r, eval=FALSE}
+#include <Rcpp.h>
+#include <dplyr.h>
+
+// R automatically calls this function when the maypack package is loaded. 
+extern "C" void R_init_mypack( DllInfo* info ){
+  registerHybridHandler( "hitchhiker", hitchhiker_handler );
+}
+```
+
+Для этого ваш пакет должен знать о заголовках Rcpp и dplyr, что требует эту информацию в файле `DESCRIPTION`:
+
+```{r, eval=FALSE}
+LinkingTo: Rcpp, dplyr, BH
+```
+
+`Makevars` и `Makevars.win` аналогичны тем, которые используются для любого пакета с функциями `Rcpp`. См. виньетки `Rcpp` для подробностей.
