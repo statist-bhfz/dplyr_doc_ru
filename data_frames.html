@@ -124,7 +124,7 @@ img {
 <p>В дополнение к <code>data_frame()</code> dplyr предлагает функцию <code>as_data_frame()</code> для приведения списков в формат таблиц данных. Она делает две вещи:</p>
 <ul>
 <li><p>Проверяет, что исходный список является пригодным для таблицы данных, т.е. что каждый элемент имеет имя, является одномерным атомарным вектором или списком, и все элементы имеют одинаковую длину.</p></li>
-<li><p>Устанавливает класс и атрибуты списка, чтобы заставить его вести себя как таблицу данных. Эта модицикация не требует полной копии исходного списка и поэтому работает очень быстро.</p></li>
+<li><p>Устанавливает класс и атрибуты списка, чтобы заставить его вести себя как таблицу данных. Эта модификация не требует полной копии исходного списка и поэтому работает очень быстро.</p></li>
 </ul>
 <p>Это гораздо проще, чем <code>as.data.frame()</code>. Тяжело в точности объяснить, что именно делает <code>as.data.frame()</code>, но это действие аналогично <code>do.call(cbind, lapply(x, data.frame))</code> - т.е. происходит превращение каждого компонента в таблицу данных и объединение их при помощи <code>cbinds()</code>. Следовательно,<code>as_data_frame()</code> работает гораздо быстрее <code>as.data.frame()</code>:</p>
 <pre class="r"><code>l2 &lt;- replicate(26, sample(100), simplify = FALSE)
@@ -134,12 +134,12 @@ microbenchmark::microbenchmark(
   as.data.frame(l2)
 )</code></pre>
 <pre><code>## Unit: microseconds
-##               expr      min        lq      mean    median       uq
-##  as_data_frame(l2)  196.887  249.1265  673.2732  315.2975  450.889
-##  as.data.frame(l2) 2353.816 3215.8910 6836.6797 4207.0565 7542.053
-##        max neval cld
-##   7241.152   100  a 
-##  42231.691   100   b</code></pre>
+##               expr      min       lq      mean   median        uq      max
+##  as_data_frame(l2)  188.993  204.781  282.6718  236.125  276.0595 2656.111
+##  as.data.frame(l2) 2169.932 2283.930 2675.8876 2473.387 2856.0155 4842.758
+##  neval cld
+##    100  a 
+##    100   b</code></pre>
 <p>Скорость <code>as.data.frame()</code> обычно не является “бутылочным горлышком” при интерактивной работе, но может быть проблемой при комбинировании тысяч беспорядочных источников в одну “чистую” таблицу.</p>
 </div>
 <div class="section level2">
@@ -152,32 +152,32 @@ microbenchmark::microbenchmark(
 <li><p>где расположен каждый атрибут</p></li>
 </ul>
 <pre class="r"><code>location(iris)</code></pre>
-<pre><code>## &lt;062A71C0&gt;
+<pre><code>## &lt;066DE4F8&gt;
 ## Variables:
-##  * Sepal.Length: &lt;0709EBF0&gt;
-##  * Sepal.Width:  &lt;0709F0C0&gt;
-##  * Petal.Length: &lt;0709F590&gt;
-##  * Petal.Width:  &lt;0709FA60&gt;
-##  * Species:      &lt;0709FF30&gt;
+##  * Sepal.Length: &lt;06E56970&gt;
+##  * Sepal.Width:  &lt;06E56E40&gt;
+##  * Petal.Length: &lt;06E33288&gt;
+##  * Petal.Width:  &lt;06E33758&gt;
+##  * Species:      &lt;06E33C28&gt;
 ## Attributes:
-##  * names:        &lt;062A7188&gt;
-##  * row.names:    &lt;070A2B30&gt;
-##  * class:        &lt;06E586F0&gt;</code></pre>
+##  * names:        &lt;066DE4C0&gt;
+##  * row.names:    &lt;06E29A68&gt;
+##  * class:        &lt;06E9D008&gt;</code></pre>
 <p>Полезно знать адрес памяти, поскольку, если адрес изменился, то вы знаете, что R создал копию. Копии - это плохо, поскольку копирование вектора требует времени. Это обычно не является “бутылочным горлышком”, если вы имеете несколько тысяч значений, но если их миллионы или десятки миллионов, то требуется значительное количество времени. Ненужные копии также плохи тем, что расходуют память.</p>
 <p>R старается избегать создания копий, когда это возможно. Например, если вы присвоите <code>iris</code> другой переменной, она по-прежнему будет ссылаться на тот же адрес:</p>
 <pre class="r"><code>iris2 &lt;- iris
 location(iris2)</code></pre>
-<pre><code>## &lt;062A71C0&gt;
+<pre><code>## &lt;066DE4F8&gt;
 ## Variables:
-##  * Sepal.Length: &lt;0709EBF0&gt;
-##  * Sepal.Width:  &lt;0709F0C0&gt;
-##  * Petal.Length: &lt;0709F590&gt;
-##  * Petal.Width:  &lt;0709FA60&gt;
-##  * Species:      &lt;0709FF30&gt;
+##  * Sepal.Length: &lt;06E56970&gt;
+##  * Sepal.Width:  &lt;06E56E40&gt;
+##  * Petal.Length: &lt;06E33288&gt;
+##  * Petal.Width:  &lt;06E33758&gt;
+##  * Species:      &lt;06E33C28&gt;
 ## Attributes:
-##  * names:        &lt;062A7188&gt;
-##  * row.names:    &lt;07107FE0&gt;
-##  * class:        &lt;06E586F0&gt;</code></pre>
+##  * names:        &lt;066DE4C0&gt;
+##  * row.names:    &lt;07269440&gt;
+##  * class:        &lt;06E9D008&gt;</code></pre>
 <p>Вместо тщательного сравнения длинных ячеек памяти мы можем использовать функцию <code>dplyr::changes()</code>для описания изменений между двумя версиями таблицы данных. Она покажет нам, что <code>iris</code> и <code>iris2</code> идентичны - они ссылаются на одно и то же место в памяти.</p>
 <pre class="r"><code>changes(iris2, iris)</code></pre>
 <pre><code>## &lt;identical&gt;</code></pre>
@@ -186,24 +186,24 @@ location(iris2)</code></pre>
 changes(iris, iris2)</code></pre>
 <pre><code>## Changed variables:
 ##              old      new     
-## Sepal.Length 0709EBF0 034BD178
+## Sepal.Length 06E56970 068A73D8
 ## 
 ## Changed attributes:
 ##              old      new     
-## row.names    033169D0 02770708</code></pre>
+## row.names    032A4358 06ECBD50</code></pre>
 <p>(Этого не было до R 3.1.0: R создавал полную копию целой таблицы данных.)</p>
 <p>dplyr также умен:</p>
 <pre class="r"><code>iris3 &lt;- mutate(iris, Sepal.Length = Sepal.Length * 2)
 changes(iris3, iris)</code></pre>
 <pre><code>## Changed variables:
 ##              old      new     
-## Sepal.Length 028B7F50 0709EBF0
+## Sepal.Length 06E49140 06E56970
 ## 
 ## Changed attributes:
 ##              old      new     
-## class        05B121A0 06E586F0
-## names        060077E0 062A7188
-## row.names    02701058 02778BC8</code></pre>
+## class        0295D388 06E9D008
+## names        029888F0 066DE4C0
+## row.names    06FECE38 023F4EE8</code></pre>
 <p>Он достаточно умен для создания только одного столца: остальные столбцы продолжают ссылаться на их старые расположения. Вы могли заметить, что атрибуты по-прежнему были скопированы. Это слабо влияет на производительность, посольку атрибуты обычно являются короткими векторами и их копирования делает внутренний код dplyr значительно проще.</p>
 <p>dplyr никогда не делает копии, до тех пор, пока:</p>
 <ul>
