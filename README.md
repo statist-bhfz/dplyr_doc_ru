@@ -1,11 +1,4 @@
-﻿---
-title: "Перевод документации по dplyr"
-output: html_document
-date: '2015-08-29'
-author: 'Andrey Ogurtsov'
----
-
-# Перевод документации по dplyr
+﻿# Перевод документации по dplyr
 
 Данный репозиторий содержит переводы всех виньеток по пакету 
 [dplyr](https://cran.r-project.org/web/packages/dplyr/):
@@ -16,7 +9,7 @@ author: 'Andrey Ogurtsov'
 
 [Hybrid evaluation](https://github.com/statist-bhfz/dplyr_doc_ru/blob/master/hybrid_evaluation.Rmd)
 
-[Introduction to dplyr](http://rpubs.com/aa989190f363e46d/dplyr_intro) (перевод выполнен [aa989190f363e46d](http://rpubs.com/aa989190f363e46d/dplyr_intro), здесь сохранена копия)
+[Introduction to dplyr](http://rpubs.com/aa989190f363e46d/dplyr_intro) (перевод выполнен [aa989190f363e46d](http://rpubs.com/aa989190f363e46d/dplyr_intro), здесь сохранена [копия](https://github.com/statist-bhfz/dplyr_doc_ru/blob/master/dplyr_introduction.rmd))
 
 [Adding a new SQL backend](https://github.com/statist-bhfz/dplyr_doc_ru/blob/master/SQL_backend.Rmd)
 
@@ -26,7 +19,7 @@ author: 'Andrey Ogurtsov'
 
 [Window functions and grouped mutate/filter](https://github.com/statist-bhfz/dplyr_doc_ru/blob/master/2table_verbs.Rmd)
 
-Ниже представлены фрагменты кода из readme, иллюстрирующие использование полезной функции `do` (в виньетка эта тема не рассматривается):
+Ниже представлены фрагменты кода из readme, иллюстрирующие использование полезной функции `do` (в виньетках эта тема не рассматривается):
 
 ```
 by_year <- lahman_df() %>% 
